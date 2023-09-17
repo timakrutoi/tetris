@@ -1,6 +1,7 @@
 import numpy as np
 import torch
-
+import gym
+from gym import spaces
 
 # colored and not colored
 c = 1
@@ -37,11 +38,11 @@ s_r = 0.0001
 
 rewards = {
     'line_clear_reward': 30 * s_r,
-    'hight_reward': 1 * s_r,
+    'hight_reward': 3 * s_r,
     'success_place_reward': 1 * s_r,
     'repeate_pen': -1 * s_r,
     'incorrect_place_penalty': -1 * s_r,
-    'lose_game_penalty': -300 * s_r,
+    'lose_game_penalty': -100 * s_r,
 }
 
 class Tetris:
@@ -57,11 +58,18 @@ class Tetris:
         self.rewards = rewards
         self.total_lines_burnt = 0
 
+    def step(self, actions):
+        rwds = self.turn(*actions)
+        done = True if rwds[0] + rwds[1] <= 2 * self.rewards['lose_game_penalty'] else False
+
+        return (self.board, self.next), rwds, done
+
     def clear_board(self, make_ft=False):
         self.board = np.zeros((self.height, self.width))
-        self.buffer = np.zeros((self.height, self.width))       
+        self.next = 5
         if make_ft:
             self.turn(0, 0)
+        return self.board, self.next
 
     def set_random_state(self, n_cols=1):
         dots = np.random.randint(0, self.width, size=n_cols)
@@ -92,7 +100,7 @@ class Tetris:
                 next_board[i:i+h, col:col+w] += cur_tetrimino
             except ValueError:
                 if i < h:
-                    return self.rewards['incorrect_place_penalty'], self.rewards['incorrect_place_penalty']
+                    return self.rewards['incorrect_place_penalty'], self.rewards['incorrect_place_penalty'] * 0.8
                 else:
                     break
             if np.sum(next_board > 1):
@@ -105,7 +113,7 @@ class Tetris:
 #         print(self.height - i + 1, i-1, h, max_h)
         if (self.height - i + 1) <= max_h:
             r += self.rewards['hight_reward']
-            f += self.rewards['hight_reward']
+#             f += self.rewards['hight_reward']
 
         r += self.rewards['success_place_reward']
         f += self.rewards['success_place_reward']
