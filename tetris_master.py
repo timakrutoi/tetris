@@ -68,12 +68,13 @@ class TetrisMaster2(nn.Module):
         self.rot.append(nn.Softmax(dim=0))
 
     def forward(self, b, n):
-        d = [b.unsqueeze(1)]
+        d = [b.unsqueeze(0).unsqueeze(0)]
         for s in self.unet_down:
             d.append(s(d[-1]))
 
         mid = self.mid(n / self.max_tetrimino)
-        d[-1] = d[-1] + mid.unsqueeze(2).unsqueeze(3).expand(*d[-1].shape)
+        mid = mid.unsqueeze(2).unsqueeze(3)
+        d[-1] = d[-1] + mid.expand(*d[-1].shape)
 
         # going up with skip connections
         b = d[-1]
