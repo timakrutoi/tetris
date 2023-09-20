@@ -1,12 +1,210 @@
 import numpy as np
-import torch
-import gym
-from gym import spaces
 
-# colored and not colored
-c = 1
-n = 0
 
+class Tetris:
+    def __init__(self, w, h, speed=3):
+        # game settings
+        self.w = w
+        self.h = h
+        self.done = None
+        self.piece_done = None
+        self.tick = None
+        self.speed = speed
+
+        # view model
+        self.board = None
+        self.cur_tetr_place = None
+        self.last_tetr_place = None
+        self.cur = None
+        self.rot = None
+        self.next = None
+        self.score = None
+        self.sr = 0.0001
+        self.rwd = 0
+
+        self.reset()
+
+    def reset(self):
+        self.board = np.zeros((self.h, self.w))
+        self.cur_tetr_place = [0, self.w//2-1]
+        self.last_tetr_place = self.cur_tetr_place.copy()
+        self.cur = 1
+        self.rot = 1
+        self.next = 5
+        self.done = False
+        self.piece_done = False
+        self.tick = 0
+        self.score = 0
+
+        return self.render(), self.next 
+
+    def step(self, action):
+        rwd = 0
+
+        # update tetrimino position inside
+        self.done = self._run_one_tick(action)
+        h = self.h - np.max(np.argmax(self.board, 0))
+        # if h > 10:
+        #     rwd -= self.sr
+
+        # Add reward for longer games
+        rwd += self.tick * self.sr * 0.0001
+        ch = self.h - np.argmax(self.board[self.cur_tetr_place[1]])
+        if ch + np.rot90(get_tetr(self.cur), self.rot).shape[0] >= h:
+            rwd -= self.sr
+        if self.cur_tetr_place[1]+2 > self.last_tetr_place[1] < self.cur_tetr_place[1]-2:
+            rwd += self.sr / 2
+
+        if self.piece_done:
+            # update board inside
+            rwd = self._check_lines(self.render())
+            # update cur and next tetrimino inside
+            self._spawn_piece()
+
+        self.rwd = rwd
+        return (self.board, self.next), rwd, self.done
+
+    def _run_one_tick(self, action):
+        self.tick += 1
+        if self.render() is None:
+            return self.board, True
+        coords = self.cur_tetr_place.copy()
+        rot = self.rot
+        piece_done = self.piece_done
+
+        # action 0 is do nothing
+        if action == 1:
+            coords[1] -= 1
+        if action == 2:
+            coords[1] += 1
+        if action == 3:
+            rot += 1
+        if action == 4:
+            rot -= 1
+
+        if self.tick % self.speed == 0:
+            coords[0] += 1
+
+        b = self.render(coords, rot)
+        if b is None:
+            # undo player's move
+            coords = self.cur_tetr_place.copy()
+            rot = self.rot
+            coords[0] += 1
+            b = self.render(coords, rot)
+
+        if b is None:
+            # means we cant move pieve lower
+            coords = self.cur_tetr_place.copy()
+            rot = self.rot
+            piece_done = True
+            b = self.board
+
+        # update tetrimino's place
+        self._update(pd=piece_done, ctp=coords, r=rot)
+#         self.print()
+
+        return False
+
+    def _setup_tetris(self):
+        self.board[16:20, 1:10] = 1
+
+    def _check_lines(self, board):
+        # compute complete line
+        r, rwd = 0, 0
+        i, j, = 0, 0
+        lines = np.sum(board, 1)
+        complete_lines = np.nonzero((lines==self.w) * range(self.h))[0]
+        r = len(complete_lines)
+        for i in complete_lines:
+            i+=1
+            board[1:i] = board[:i-1]
+        if r:
+            rwd += (1 << r) * self.sr
+            self.score += rwd / (self.sr**2)
+        # update board
+        self._update(b=board, ltp=self.cur_tetr_place.copy())
+        self.rwd = rwd
+        return rwd
+
+    def _update(self, b=None, pd=None, ctp=None, c=None, r=None, n=None, ltp=None):
+        if b is not None:
+            self.board = b
+        if pd is not None:
+            self.piece_done = pd
+        if ctp:
+            self.cur_tetr_place = ctp
+        if c:
+            self.cur = c
+        if r is not None:
+            self.rot = r
+        if n:
+            self.next = n
+        if ltp:
+            self.last_tetr_place = ltp
+
+    def _spawn_piece(self):
+        next_piece = np.random.randint(len(tetriminos.keys()))
+        self.last_tetr_place = self.cur_tetr_place.copy()
+        self._update(pd=False, ctp=[0,self.w//2-1], c=self.next, r=0, n=next_piece)
+
+    def render(self, coords=None, rot=None):
+        x, y = self.cur_tetr_place if coords is None else coords
+        rot = self.rot if rot is None else rot
+        cur = np.rot90(get_tetr(self.cur), rot)
+        w, h = cur.shape
+        board = self.board.copy()
+
+        if not (0 <= x and x+w <= self.h):
+            return
+        if not (0 <= y and y+h <= self.w):
+            return
+
+        try:
+            board[x:x+w, y:y+h] += cur
+            if (board > 1).any():
+#                 print('collision')
+                return
+        except ValueError:
+#             print('value error')
+            return
+        return board
+
+    def print(self):
+#         print(f'{self.board=}')
+        print(f'{self.cur_tetr_place=}')
+        print(f'{self.cur=}')
+        print(f'{self.rot=}')
+        print(f'{self.next=}')
+        print(f'{self.done=}')
+        print(f'{self.piece_done=}')
+#         print(f'{self.tick=}')
+#         print(f'{self.score=}')
+        print('='*30)
+        print()
+
+    def __str__(self):
+        out = []
+        ttr = get_tetr(self.next)
+        out.append(str(ttr))
+        for _ in range(3 - len(ttr)):
+            out.append('')
+        out.append(f'Ticks {self.tick}')
+        out.append(f'Score {self.score}')
+        out.append(f'Cur reward {self.rwd}')
+        b = []
+        for idx, i in enumerate(self.render()):
+            s = ' '.join(['@' if j else '.' for j in i]) + ' ' + str(self.h - idx)
+            out.append(s)
+        out.append(' '.join([str(i) for i in range(self.w)]))
+        return '\n'.join(out)   
+
+
+def get_tetr(idx):
+    return list(tetriminos.values())[idx]
+
+
+c, n = 1, 0
 tetriminos = {
     'L': np.array([
             [n, n, c],
@@ -24,174 +222,40 @@ tetriminos = {
             [c, c, n],
             [n, c, c]
         ]),
-    'square': np.array([
+    'T': np.array([
+            [c, c, c],
+            [n, c, n]
+        ]),
+    'O': np.array([
             [c, c],
             [c, c]
         ]),
-    'bar': np.array([
+    'I': np.array([
             [c, c, c, c]
         ]),
 }
 
-# standart reward
-s_r = 0.0001
-
-rewards = {
-    'line_clear_reward': 30 * s_r,
-    'hight_reward': 3 * s_r,
-    'success_place_reward': 1 * s_r,
-    'repeate_pen': -1 * s_r,
-    'incorrect_place_penalty': -1 * s_r,
-    'lose_game_penalty': -100 * s_r,
-}
-
-class Tetris:
-    def __init__(self, w=10, h=20, rewards=rewards):
-        self.width = w
-        self.height = h
-
-        self.board = np.zeros((self.height, self.width))
-        self.buffer = np.zeros((self.height, self.width))
-        self.next = 5
-        
-        self.last_turn = None
-        self.rewards = rewards
-        self.total_lines_burnt = 0
-
-    def step(self, actions):
-        rwds = self.turn(*actions)
-        done = True if rwds[0] + rwds[1] <= 2 * self.rewards['lose_game_penalty'] else False
-
-        return (self.board, self.next), rwds, done
-
-    def clear_board(self, make_ft=False):
-        self.board = np.zeros((self.height, self.width))
-        self.next = 5
-        if make_ft:
-            self.turn(0, 0)
-        return self.board, self.next
-
-    def set_random_state(self, n_cols=1):
-        dots = np.random.randint(0, self.width, size=n_cols)
-        for i in range(n_cols):
-            # self.board[-i-1] = np.random.randint(0, 2, size=self.width)
-            self.board[-i-1] = 1
-            self.board[-i-1, dots[i]] = 0
-
-        self.buffer = self.board.copy()
-        return dots
-
-    def place_piece(self, col, cur_tetrimino):
-        # move to col
-        # move down
-        h, w = cur_tetrimino.shape
-
-        max_h = get_height(self.board)
-        prev_board = self.board.copy()
-        for i in range(h, self.height + 1):
-            next_board = self.board.copy()
-
-#             print(get_height(self.board) + h, self.height)
-            if get_height(self.board) + h > self.height:
-                return self.rewards['lose_game_penalty'], self.rewards['lose_game_penalty']
-
-            try:
-                i -= h
-                next_board[i:i+h, col:col+w] += cur_tetrimino
-            except ValueError:
-                if i < h:
-                    return self.rewards['incorrect_place_penalty'], self.rewards['incorrect_place_penalty'] * 0.8
-                else:
-                    break
-            if np.sum(next_board > 1):
-                break
-            prev_board = next_board.copy()
-        self.board = prev_board.copy()
-
-        r, f = 0, 0
-
-#         print(self.height - i + 1, i-1, h, max_h)
-        if (self.height - i + 1) <= max_h:
-            r += self.rewards['hight_reward']
-#             f += self.rewards['hight_reward']
-
-        r += self.rewards['success_place_reward']
-        f += self.rewards['success_place_reward']
-
-        return r, f
-
-    def check_complete_lines(self):
-        # check complete lines
-        r = 0
-        i, j, = 0, 0
-        lines = np.sum(self.board, 1)
-        if np.sum(lines == self.width):
-            next_board = np.zeros(self.board.shape)
-            i, j = 0, 0
-            while i < self.height:
-                if lines[-i-1] == 0 or abs(j) >= self.height-1:
-                    break
-                if lines[-i-1] == self.width:
-                    j+=1
-                    r+=1
-
-                next_board[-i-1] = self.board[-j-1]
-                i+=1
-                j+=1
-            self.board = next_board
-        self.total_lines_burnt += r
-#         print(r)
-        return r**2 * self.rewards['line_clear_reward']
-
-    def turn(self, col, rot):
-        rp, rr = 0, 0
-        # rotate piece
-        cur_tetrimino = np.rot90(list(tetriminos.values())[self.next], rot)
-
-        r = self.place_piece(col, cur_tetrimino)
-        rp += r[0]
-        rr += r[1]
-        # print(f'1 {rp, rr=}')
-        r = self.check_complete_lines()
-        rp += r
-        rr += r
-        # print(f'2 {rp, rr=}')
-        self.next = np.random.randint(0, len(tetriminos))
-
-        if self.last_turn is not None:
-            rp += self.rewards['repeate_pen'] if self.last_turn[0] == col else 0
-            rr += self.rewards['repeate_pen'] if self.last_turn[1] == rot else 0
-        self.last_turn = (col, rot)
-
-        return rp, rr
-
-    def print(self):
-        print(list(tetriminos.values())[self.next])
-        print(f'{self.total_lines_burnt=}')
-        print()
-        b = []
-        for idx, i in enumerate(self.board):
-            s = ' '.join(['@' if j else '.' for j in i]) + ' ' + str(self.height - idx)
-            # b.append(s)
-            print(s)
-        print(' '.join([str(i) for i in range(self.width)]))
-
-
-def get_height(buffer):
-    hs = [(np.argmax(buffer[:,i])) for i in range(buffer.shape[1])]
-    hs = np.array(hs)
-    if np.sum(hs) == 0:
-        return 0
-    hs[hs==0] = buffer.shape[0]
-    return buffer.shape[0] - np.min(hs)
 
 if __name__ == '__main__':
-    t = Tetris()
+    import os
+    from argparse import ArgumentParser
 
-    t.set_random_state()
+    p = ArgumentParser()
+    p.add_argument('-c', '--clear-screen', type=bool, default=True)
+    p.add_argument('--w', '--width', type=int, default=10)
+    p.add_argument('--h', '--height', type=int, default=20)
+    a = p.parse_args()
+
+    t = Tetris(a.w, a.h)
+
+    t.reset()
+#     t._setup_tetris()
     while True:
-        t.print()
-        col, rot = input('input col and rot: ').split(' ')
-        r = t.turn(int(col), int(rot))
-        print(f'reward: {r}')
+        if a.clear_screen:
+            os.system('clear')
+        print(t)
+        act = input('action: ')
+        act = int(act) if act != '' else 0
+        r = t.step(act)
+    #         print(f'reward: {r}')
 
