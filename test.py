@@ -6,30 +6,30 @@ import torch.nn.functional as F
 from tqdm import tqdm
 
 from tetris import Tetris
-from tetrismaster import TetrisMaster
+from tetris_master import TetrisMaster2 as TetrisMaster
 
 
 if __name__ == '__main__':
-	w, h = 10, 20
-	epoch = 1000
+    import os
+    w, h = 10, 20
+    epoch = 1000
 
-	game = Tetris(w, h)
-	model = TetrisMaster(bw=w, bh=h).double()
+    game = Tetris(w, h)
+    model = TetrisMaster().double()
 
-	cp = torch.load('checkpoints/test_model')
-	model.load_state_dict(cp['model_state_dict'])
+    cp = torch.load('checkpoints/test_model')
+    model.load_state_dict(cp['model_state_dict'])
 
-	for _ in range(100):
-		# x = np.concatenate([game.board.reshape(-1), [game.next]])
-		x = torch.tensor(game.board, dtype=torch.double).unsqueeze(0)
-		y = model(x, torch.tensor(game.next, dtype=torch.double).view(1, 1))#[0]
-		game.clear_board()
-		game.set_random_state()
-		with torch.no_grad():
-			col = y[:w].argmax()
-			rot = y[w:].argmax()
-			res = game.turn(col, rot)
-		game.print()
-		print(f'{res=}')
-		time.sleep(2)
+    while 1:
+        # game.reset()
+        os.system('clear')
+        x = torch.tensor(game.board, dtype=torch.double)
+        y = model(x, torch.tensor(game.next, dtype=torch.double).view(1, 1))#[0]
+        with torch.no_grad():
+            print(f'probs {y.detach().numpy()}')
+            a = y.argmax()
+            res = game.step(a)
+        # game.print()
+        print(game)
+        time.sleep(0.1)
 
