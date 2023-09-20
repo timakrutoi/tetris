@@ -5,72 +5,62 @@ import torch.nn.functional as F
 import random
 
 
+class GlobalPool2d(nn.Module):
+    def __init__(self):
+        super(GlobalPool2d, self).__init__()
+
+    def forward(self, x):
+        b, c, w, h = x.shape
+        return nn.functional.adaptive_avg_pool2d(x, 1).reshape((b, c))
+
+
 class TetrisMaster2(nn.Module):
-    def __init__(self, depth=2, bw=10, bh=20, n_hidden=256):
+    def __init__(self, depth=8, n_hidden=32, hidden_size=100):
         super().__init__()
 
         self.max_tetrimino = 6
+        self.num_actions = 4
+        self.hidden_size = hidden_size
         self.act = nn.ReLU
 
-        # unet like arch
-        self.unet_down = nn.Sequential()
-        self.unet_up = nn.Sequential()
-        self.mid = nn.Sequential()
+        self.conv = nn.Sequential()
 
-        for i in range(1, depth):
-            # conv + pool + act
-            self.unet_down.append(nn.Sequential(
-                nn.Conv2d(i**2, (i+1)**2, (2,2), stride=1, padding=1),
-                nn.MaxPool2d(2),
-                self.act()
-            ))
+        for i in range(depth):
+            self.conv.append(nn.Conv2d(2**i, 2**(i+1), kernel_size=3, stride=1, padding=1))
+            self.conv.append(self.act())
 
-        for i in range(depth, 1, -1):
-            # convtransposed + pool + act
-            self.unet_up.append(nn.Sequential(
-                nn.ConvTranspose2d(i**2, (i-1)**2, (2,2), stride=2, padding=0),
-                self.act()
-            ))
+        self.conv.append(GlobalPool2d())        
 
-        if depth:
-            self.mid.append(nn.Linear(1, 100))
-            self.mid.append(self.act())
-            self.mid.append(nn.Linear(100, 1000))
-            self.mid.append(self.act())
-            self.mid.append(nn.Linear(1000, depth**2))
-            self.mid.append(self.act())
+        self.mid = nn.Sequential(
+            nn.Linear(1, 32),
+            self.act(),
+            nn.Linear(32, 128),
+            self.act(),
+            nn.Linear(128, 2**depth),
+            self.act()
+        )
 
         self.out = nn.Sequential(
-            nn.Linear(bw * bh, 100),
+            nn.Linear(2**depth, self.hidden_size),
             self.act(),
         )
 
         for _ in range(n_hidden):
-            self.out.append(nn.Linear(100, 100))
+            self.out.append(nn.Linear(self.hidden_size, self.hidden_size))
             self.out.append(self.act())
 
-        self.out.append(nn.Linear(100, 4))
+        self.out.append(nn.Linear(self.hidden_size, self.num_actions))
         self.out.append(nn.Softmax(dim=0))
 
     def forward(self, b, n):
-        d = [b.unsqueeze(0).unsqueeze(0)]
-        # print(d[-1].shape)
-        for s in self.unet_down:
-            d.append(s(d[-1]))
+        b = b - 0.5
+        if len(b.shape) == 2:
+            b = b.unsqueeze(0)
+        x = self.conv(b.unsqueeze(0))
+        r = self.mid(n / self.max_tetrimino)
 
-        mid = self.mid(n / self.max_tetrimino)
-        mid = mid.unsqueeze(2).unsqueeze(3)
-        
-        #print(f'{d[-1].shape} + {mid.shape}')
-        d[-1] = d[-1] + mid.expand(*d[-1].shape)
-
-        # going up with skip connections
-        b = d[-1]
-        for i, s in enumerate(self.unet_up):
-            b = s(b) + d[-i - 2]
-
-        b = b.view(-1)
-        o = self.out(b)
+        x = (x + r).view(-1)
+        o = self.out(x)
 
         return o
 
