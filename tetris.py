@@ -2,7 +2,7 @@ import numpy as np
 
 
 class Tetris:
-    def __init__(self, w, h, speed=3):
+    def __init__(self, w, h, speed=2):
         # game settings
         self.w = w
         self.h = h
@@ -13,8 +13,8 @@ class Tetris:
 
         # view model
         self.board = None
-        self.cur_tetr_place = None
-        self.last_tetr_place = None
+        self.ctp = None
+        self.ltp = None
         self.cur = None
         self.rot = None
         self.next = None
@@ -26,8 +26,8 @@ class Tetris:
 
     def reset(self):
         self.board = np.zeros((self.h, self.w))
-        self.cur_tetr_place = [0, self.w//2-1]
-        self.last_tetr_place = self.cur_tetr_place.copy()
+        self.ctp = [0, self.w//2-1]
+        self.ltp = [-10, -10]
         self.cur = 1
         self.rot = 1
         self.next = 5
@@ -40,20 +40,25 @@ class Tetris:
 
     def step(self, action):
         rwd = 0
+        ct = np.rot90(get_tetr(self.cur), self.rot)
 
         # update tetrimino position inside
         self.done = self._run_one_tick(action)
-        h = self.h - np.max(np.argmax(self.board, 0))
         # if h > 10:
         #     rwd -= self.sr
 
         # Add reward for longer games
-        rwd += self.tick * self.sr * 0.0001
-        ch = self.h - np.argmax(self.board[self.cur_tetr_place[1]])
-        if ch + np.rot90(get_tetr(self.cur), self.rot).shape[0] >= h:
-            rwd -= self.sr
-        if self.cur_tetr_place[1]+2 > self.last_tetr_place[1] < self.cur_tetr_place[1]-2:
-            rwd += self.sr / 2
+        #rwd += self.tick * self.sr * 0.005
+        k = np.max(np.argmax(self.board, 0))
+        l = np.argmax(self.board[:, self.ctp[1]:self.ctp[1]+ct.shape[1]], 0)
+        l = np.where(l > 0, self.h - l, 0)
+
+        h = self.h - k if k > 0 else 0
+        ch = np.max(l)
+        if ch + ct.shape[0] >= h:
+            rwd -= 0#self.sr
+        if self.ctp[1] > self.ltp[1]+1 or self.ltp[1]-1 > self.ctp[1]:
+            rwd += self.sr
 
         if self.piece_done:
             # update board inside
@@ -68,7 +73,7 @@ class Tetris:
         self.tick += 1
         if self.render() is None:
             return self.board, True
-        coords = self.cur_tetr_place.copy()
+        coords = self.ctp.copy()
         rot = self.rot
         piece_done = self.piece_done
 
@@ -88,14 +93,14 @@ class Tetris:
         b = self.render(coords, rot)
         if b is None:
             # undo player's move
-            coords = self.cur_tetr_place.copy()
+            coords = self.ctp.copy()
             rot = self.rot
             coords[0] += 1
             b = self.render(coords, rot)
 
         if b is None:
             # means we cant move pieve lower
-            coords = self.cur_tetr_place.copy()
+            coords = self.ctp.copy()
             rot = self.rot
             piece_done = True
             b = self.board
@@ -123,7 +128,7 @@ class Tetris:
             rwd += (1 << r) * self.sr
             self.score += rwd / (self.sr**2)
         # update board
-        self._update(b=board, ltp=self.cur_tetr_place.copy())
+        self._update(b=board, ltp=self.ctp.copy())
         self.rwd = rwd
         return rwd
 
@@ -133,7 +138,7 @@ class Tetris:
         if pd is not None:
             self.piece_done = pd
         if ctp:
-            self.cur_tetr_place = ctp
+            self.ctp = ctp
         if c:
             self.cur = c
         if r is not None:
@@ -141,15 +146,15 @@ class Tetris:
         if n:
             self.next = n
         if ltp:
-            self.last_tetr_place = ltp
+            self.ltp = ltp
 
     def _spawn_piece(self):
         next_piece = np.random.randint(len(tetriminos.keys()))
-        self.last_tetr_place = self.cur_tetr_place.copy()
+        self.ltp = self.ctp.copy()
         self._update(pd=False, ctp=[0,self.w//2-1], c=self.next, r=0, n=next_piece)
 
     def render(self, coords=None, rot=None):
-        x, y = self.cur_tetr_place if coords is None else coords
+        x, y = self.ctp if coords is None else coords
         rot = self.rot if rot is None else rot
         cur = np.rot90(get_tetr(self.cur), rot)
         w, h = cur.shape
@@ -172,7 +177,7 @@ class Tetris:
 
     def print(self):
 #         print(f'{self.board=}')
-        print(f'{self.cur_tetr_place=}')
+        print(f'{self.ctp=}')
         print(f'{self.cur=}')
         print(f'{self.rot=}')
         print(f'{self.next=}')
@@ -186,9 +191,10 @@ class Tetris:
     def __str__(self):
         out = []
         ttr = get_tetr(self.next)
-        out.append(str(ttr))
+        out.append(str(ttr)) 
         for _ in range(3 - len(ttr)):
             out.append('')
+        out.append(f'places {self.ctp[1]} - {self.ltp[1]}')
         out.append(f'Ticks {self.tick}')
         out.append(f'Score {self.score}')
         out.append(f'Cur reward {self.rwd}')
@@ -251,8 +257,8 @@ if __name__ == '__main__':
     t.reset()
 #     t._setup_tetris()
     while True:
-        if a.clear_screen:
-            os.system('clear')
+        #if a.clear_screen:
+        #    os.system('clear')
         print(t)
         act = input('action: ')
         act = int(act) if act != '' else 0
