@@ -7,12 +7,12 @@ from collections import deque
 
 
 class DQNAgent:
-    def __init__(self, model, state_dim, action_dim, learning_rate=1e-4, gamma=0.99, epsilon_decay=0.999999):
+    def __init__(self, model, state_dim, action_dim, learning_rate=5e-3, gamma=0.99, epsilon_decay=0.99):
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.gamma = gamma
         self.epsilon = 1.0
-        self.epsilon_min = 0.01
+        self.epsilon_min = 0.1
         self.epsilon_decay = epsilon_decay
         self.model = model
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
