@@ -1,15 +1,19 @@
+#!/usr/bin/python3
+# coding=utf-8
+
 import numpy as np
 
 
 class Tetris:
-    def __init__(self, w, h, speed=2):
+    def __init__(self, width, hight, speed=1, train=False):
         # game settings
-        self.w = w
-        self.h = h
+        self.w = width
+        self.h = hight
         self.done = None
         self.piece_done = None
         self.tick = None
         self.speed = speed
+        self.train = train
 
         # view model
         self.board = None
@@ -28,7 +32,7 @@ class Tetris:
         self.board = np.zeros((self.h, self.w))
         self.ctp = [0, self.w//2-1]
         self.ltp = [-10, -10]
-        self.cur = 1
+        self.cur = -1
         self.rot = 1
         self.next = 5
         self.done = False
@@ -39,7 +43,7 @@ class Tetris:
         return self.render(), self.next 
 
     def step(self, action):
-        rwd = 0
+        rwd, lrwd = 0, 0
         ct = np.rot90(get_tetr(self.cur), self.rot)
 
         # update tetrimino position inside
@@ -56,18 +60,24 @@ class Tetris:
         h = self.h - k if k > 0 else 0
         ch = np.max(l)
         if ch + ct.shape[0] >= h:
-            rwd -= 0#self.sr
+            rwd -= self.sr
         if self.ctp[1] > self.ltp[1]+1 or self.ltp[1]-1 > self.ctp[1]:
             rwd += self.sr
 
         if self.piece_done:
+            self.piece_done = False
             # update board inside
-            rwd = self._check_lines(self.render())
-            # update cur and next tetrimino inside
-            self._spawn_piece()
+            lrwd = self._check_lines(self.render())
+            if self.train:
+                if lrwd > 0:
+                    lrwd *= 10
+                self._setup_train()
+            else:
+                # update cur and next tetrimino inside
+                self._spawn_piece()
 
-        self.rwd = rwd
-        return (self.board, self.next), rwd, self.done
+        self.rwd = rwd + lrwd
+        return (self.board, self.next), self.rwd, self.done
 
     def _run_one_tick(self, action):
         self.tick += 1
@@ -111,8 +121,12 @@ class Tetris:
 
         return False
 
-    def _setup_tetris(self):
-        self.board[16:20, 1:10] = 1
+    def _setup_train(self, h=1, c=4):
+        self.board.fill(0)
+        self.board[-h:self.h, 0:c] = 1
+        self.board[-h:self.h, c+1:10] = 1
+        self.next = -1
+        self.ctp = [self.h-h-4, self.w//2-1]
 
     def _check_lines(self, board):
         # compute complete line
@@ -151,7 +165,7 @@ class Tetris:
     def _spawn_piece(self):
         next_piece = np.random.randint(len(tetriminos.keys()))
         self.ltp = self.ctp.copy()
-        self._update(pd=False, ctp=[0,self.w//2-1], c=self.next, r=0, n=next_piece)
+        self._update(ctp=[0,self.w//2-1], c=self.next, r=0, n=next_piece)
 
     def render(self, coords=None, rot=None):
         x, y = self.ctp if coords is None else coords
@@ -242,6 +256,23 @@ tetriminos = {
 }
 
 
+def train_mode(w, h):
+    
+    t = Tetris(w, h)
+    t.train = True
+
+    t.reset()
+    t._setup_train()
+
+    while True:
+        if a.clear_screen:
+           os.system('clear')
+        print(t)
+        act = input('action: ')
+        act = int(act) if act != '' else 0
+        r = t.step(act)
+
+
 if __name__ == '__main__':
     import os
     from argparse import ArgumentParser
@@ -252,13 +283,17 @@ if __name__ == '__main__':
     p.add_argument('--h', '--height', type=int, default=20)
     a = p.parse_args()
 
+    train_mode(a.w, a.h)
+    exit()
+
     t = Tetris(a.w, a.h)
 
     t.reset()
-#     t._setup_tetris()
+#     t._setup_train()
     while True:
-        #if a.clear_screen:
-        #    os.system('clear')
+        if a.clear_screen:
+           os.system('clear')
+        t._setup_train()
         print(t)
         act = input('action: ')
         act = int(act) if act != '' else 0

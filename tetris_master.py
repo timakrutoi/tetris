@@ -15,7 +15,7 @@ class GlobalPool2d(nn.Module):
 
 
 class TetrisMaster2(nn.Module):
-    def __init__(self, depth=8, n_hidden=32, hidden_size=100):
+    def __init__(self, depth, hidden_num, hidden_size):
         super().__init__()
 
         self.max_tetrimino = 6
@@ -45,7 +45,7 @@ class TetrisMaster2(nn.Module):
             self.act(),
         )
 
-        for _ in range(n_hidden):
+        for _ in range(hidden_num):
             self.out.append(nn.Linear(self.hidden_size, self.hidden_size))
             self.out.append(self.act())
 

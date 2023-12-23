@@ -7,12 +7,13 @@ from collections import deque
 
 
 class DQNAgent:
-    def __init__(self, model, state_dim, action_dim, learning_rate=5e-3, gamma=0.99, epsilon_decay=0.99):
+    def __init__(self, model, state_dim, action_dim, learning_rate, betta, gamma, epsilon, epsilon_min, epsilon_decay):
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.gamma = gamma
-        self.epsilon = 1.0
-        self.epsilon_min = 0.1
+        self.betta = betta
+        self.epsilon = epsilon
+        self.epsilon_min = epsilon_min
         self.epsilon_decay = epsilon_decay
         self.model = model
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
@@ -31,7 +32,7 @@ class DQNAgent:
 
     def replay(self, batch_size):
         if len(self.memory) < batch_size:
-            return
+            raise Exception(f'Memory size is less than batch size ({len(self.memory)} < {batch_size})')
         minibatch = random.sample(self.memory, batch_size)
         for state, action, reward, next_state, done in minibatch:
             target = reward
@@ -45,11 +46,13 @@ class DQNAgent:
                 torch.tensor(state[1], dtype=torch.double).view(-1, 1)).clone()
 
             target_q_values[action] = target 
-            loss = nn.MSELoss()(self.model(
+            ys = self.model(
                 torch.tensor(state[0], dtype=torch.double),
-                torch.tensor(state[1], dtype=torch.double).view(-1, 1)
-            ), target_q_values) * 1e2
-
+                torch.tensor(state[1], dtype=torch.double).view(-1, 1))
+            
+            loss = nn.MSELoss()(ys, target_q_values)
+            entropy = -self.betta * (ys.exp() * ys).sum()
+            loss = loss - entropy
 
             self.optimizer.zero_grad() 
             loss.backward()
