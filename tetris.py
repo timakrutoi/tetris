@@ -2,6 +2,7 @@
 # coding=utf-8
 
 import numpy as np
+import random
 
 
 class Tetris:
@@ -27,6 +28,8 @@ class Tetris:
         self.rwd = 0
 
         self.reset()
+        if self.train:
+            self._setup_train()
 
     def reset(self):
         self.board = np.zeros((self.h, self.w))
@@ -47,7 +50,7 @@ class Tetris:
         ct = np.rot90(get_tetr(self.cur), self.rot)
 
         # update tetrimino position inside
-        self.done = self._run_one_tick(action)
+        _, self.done = self._run_one_tick(action)
         # if h > 10:
         #     rwd -= self.sr
 
@@ -69,12 +72,13 @@ class Tetris:
             # update board inside
             lrwd = self._check_lines(self.render())
             if self.train:
-                if lrwd > 0:
-                    lrwd *= 10
+                # if lrwd > 0:
+                #     lrwd *= 10
                 self._setup_train()
             else:
                 # update cur and next tetrimino inside
-                self._spawn_piece()
+                if not self.train:
+                    self._spawn_piece()
 
         self.rwd = rwd + lrwd
         return (self.board, self.next), self.rwd, self.done
@@ -82,7 +86,7 @@ class Tetris:
     def _run_one_tick(self, action):
         self.tick += 1
         if self.render() is None:
-            return self.board, True
+            return self.board, False
         coords = self.ctp.copy()
         rot = self.rot
         piece_done = self.piece_done
@@ -119,14 +123,16 @@ class Tetris:
         self._update(pd=piece_done, ctp=coords, r=rot)
 #         self.print()
 
-        return False
+        return self.board, False
 
-    def _setup_train(self, h=1, c=4):
+    def _setup_train(self, h=4, hp=4, c=4):
         self.board.fill(0)
+        c = random.randint(0, 9)
         self.board[-h:self.h, 0:c] = 1
         self.board[-h:self.h, c+1:10] = 1
-        self.next = -1
-        self.ctp = [self.h-h-4, self.w//2-1]
+        self.next = 5
+        # self.ctp = [self.h-hp-4, self.w//2-1]
+        self.ctp = [0, self.w//2-1]
 
     def _check_lines(self, board):
         # compute complete line
@@ -185,7 +191,6 @@ class Tetris:
 #                 print('collision')
                 return
         except ValueError:
-#             print('value error')
             return
         return board
 
@@ -221,6 +226,7 @@ class Tetris:
 
 
 def get_tetr(idx):
+    # print(idx)
     return list(tetriminos.values())[idx]
 
 
