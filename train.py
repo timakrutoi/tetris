@@ -1,5 +1,6 @@
 #!/home/tima/.pyenv/shims/python3
 # coding=utf-8
+# PYTHON_ARGCOMPLETE_OK
 import torch
 from tqdm import tqdm
 
@@ -7,9 +8,11 @@ from Agent import DQNAgent
 from tetris import Tetris
 from tetris_master import TetrisMaster2
 
+
 if __name__ == '__main__':
     import os
     from argparse import ArgumentParser
+    import argcomplete
 
     parser = ArgumentParser()
 
@@ -41,7 +44,7 @@ if __name__ == '__main__':
                              '(helps with initial learning). Default = %(default).2e.')
     agent_group.add_argument('--epsilon-min', type=float, default=0.1,
                              help='Minimum chance to get random choice of action. Default = %(default).2e.')
-    agent_group.add_argument('--epsilon-decay', type=float, default=0.99,
+    agent_group.add_argument('--epsilon-decay', type=float, default=0.999,
                              help='Decay of epsilon on each iteration. Default = %(default).2e.')
 
     learning_group = parser.add_argument_group('Learning', 'Learning params')
@@ -53,7 +56,7 @@ if __name__ == '__main__':
                                 help='Number of test episodes in each epoch. Default = %(default)d.')
     learning_group.add_argument('--lr', type=float, default=1e-5,
                                 help='Learning rate. Default = %(default).2e.')
-    learning_group.add_argument('--game-len', type=int, default=100,
+    learning_group.add_argument('--game-len', type=int, default=200,
                                 help='Maximum lenght of the game in ticks. Default = %(default)d.')
     learning_group.add_argument('--batch-size', type=int, default=32,
                                 help='Size of learning batch. Default = %(default)d.')
@@ -70,6 +73,7 @@ if __name__ == '__main__':
     saving_group.add_argument('--llc', '--load-last-checkpoint', action='store_true', default=False,
                               help='Load last saved checkpoint. Default = %(default)r.')
 
+    argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
     arg_gr = {}
@@ -86,7 +90,7 @@ if __name__ == '__main__':
 
     if arg_gr['Save/Load']['checkpoint'] or arg_gr['Save/Load']['llc']:
         if arg_gr['Save/Load']['llc']:
-            cp_path = os.sep.join([arg_gr['Save/Load']['checkpoints_path'],
+            cp_path = os.sep.join([arg_gr['Save/Load']['checkpoint_path'],
                                    'test_model'])
             arg_gr['Save/Load']['checkpoint'] = cp_path
         cp = torch.load(arg_gr['Save/Load']['checkpoint'])
@@ -103,8 +107,9 @@ if __name__ == '__main__':
         # torch.autograd.set_detect_anomaly(True)
 
         # Training the DQN agent
-        it = tqdm(range(arg_gr['Learning']['train_episodes']))
-        for episode in it:
+        train_iter = tqdm(range(arg_gr['Learning']['train_episodes']))
+        model.train()
+        for episode in train_iter:
             with torch.no_grad():
                 state = env.reset()
                 total_reward = 0
@@ -118,35 +123,39 @@ if __name__ == '__main__':
                     total_reward = total_reward + reward
                     iters += 1
             loss = agent.replay(arg_gr['Learning']['batch_size'])
-            it.set_postfix(str=f"e: {episode + 1}, loss {loss.item():.1e}, " +
+            train_iter.set_postfix(str=f"loss {loss.item():.5}, " + f"{iters=}, " +
                            f"rwd: {round(total_reward, arg_gr['Appearance']['rf'])}, " +
                            f"eps {round(agent.epsilon, arg_gr['Appearance']['rf'])}")
-        it.close()
+        train_iter.close()
 
         # Evaluate the trained agent
-        it = tqdm(range(arg_gr['Learning']['test_episodes']))
-        for _ in it:
-            state = env.reset()
-            total_reward = 0
-            done = False
-            iters = 0
-            while iters < arg_gr['Learning']['game_len'] and not done:
-                action = agent.select_action(state)
-                next_state, reward, done = env.step(action)
-                state = next_state
-                total_reward += reward
-                iters += 1
-            it.set_postfix(str=f"Test Episode, loss {round(loss.item(), arg_gr['Appearance']['rf'])}, " +
-                           f"Total Reward: {round(total_reward, arg_gr['Appearance']['rf'])}")
+        test_iter = tqdm(range(arg_gr['Learning']['test_episodes']))
+        model.eval()
+        with torch.no_grad():
+            for _ in test_iter:
+                state = env.reset()
+                total_reward = 0
+                done = False
+                iters = 0
+                # while iters < arg_gr['Learning']['game_len'] and not done:
+                while iters < 100 and not done:
+                    action = agent.select_action(state, test=True)
+                    next_state, reward, done = env.step(action)
+                    state = next_state
+                    total_reward += reward
+                    iters += 1
+                test_iter.set_postfix(str=f"Test Episode, loss {round(loss.item(), arg_gr['Appearance']['rf'])}, " +
+                            f"Total Reward: {round(total_reward, arg_gr['Appearance']['rf'])}")
+        test_iter.close()
 
-        print('saving')
+        # print('saving')
         try:
             torch.save({
-                'model_state_dict': agent.model.state_dict(),
-            }, os.sep.join([arg_gr['Save/Load']['checkpoints_path'], 'test_model']))
+                'model_state_dict': agent.online_net.state_dict(),
+            }, os.sep.join([arg_gr['Save/Load']['checkpoint_path'], 'test_model']))
         except KeyboardInterrupt:
             torch.save({
-                'model_state_dict': agent.model.state_dict(),
-            }, os.sep.join([arg_gr['Save/Load']['checkpoints_path'], 'test_model']))
+                'model_state_dict': agent.online_net.state_dict(),
+            }, os.sep.join([arg_gr['Save/Load']['checkpoint_path'], 'test_model']))
 
         it.close()
