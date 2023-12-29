@@ -18,10 +18,10 @@ class TetrisMaster2(nn.Module):
     def __init__(self, depth, hidden_num, hidden_size):
         super().__init__()
 
-        self.max_tetrimino = 6
+        self.max_tetrimino = 7
         self.num_actions = 4
         self.hidden_size = hidden_size
-        self.act = nn.ReLU
+        self.act = nn.Tanh
 
         self.conv = nn.Sequential()
 
@@ -32,7 +32,7 @@ class TetrisMaster2(nn.Module):
         self.conv.append(GlobalPool2d())        
 
         self.mid = nn.Sequential(
-            nn.Linear(1, 32),
+            nn.Linear(self.max_tetrimino, 32),
             self.act(),
             nn.Linear(32, 128),
             self.act(),
@@ -42,27 +42,42 @@ class TetrisMaster2(nn.Module):
 
         self.out = nn.Sequential(
             nn.Linear(2**depth, self.hidden_size),
-            self.act(),
+            self.act()
         )
 
         for _ in range(hidden_num):
-            self.out.append(nn.Linear(self.hidden_size, self.hidden_size))
-            self.out.append(self.act())
+            self.out.append(
+                nn.Sequential(
+                    nn.Linear(self.hidden_size, self.hidden_size),
+                    nn.LayerNorm(self.hidden_size),
+                    self.act(),
+                )
+            )
 
-        self.out.append(nn.Linear(self.hidden_size, self.num_actions))
-        self.out.append(nn.Softmax(dim=0))
+        self.end = nn.Sequential(
+            nn.Linear(self.hidden_size, self.num_actions),
+            self.act(),
+            nn.Softmax(dim=0)
+        )
 
     def forward(self, b, n):
         b = b - 0.5
         if len(b.shape) == 2:
             b = b.unsqueeze(0)
         x = self.conv(b.unsqueeze(0))
-        r = self.mid(n / self.max_tetrimino)
+
+        oh = F.one_hot(n.squeeze(0).squeeze(0).long(), self.max_tetrimino)
+        r = self.mid(oh.double())
 
         x = (x + r).view(-1)
-        o = self.out(x)
 
-        return o
+        x = self.out[:2](x)
+        for l in self.out[1:]:
+            x = l(x) + x
+
+        x = self.end(x)
+
+        return x
 
 
 if __name__ == '__main__':
